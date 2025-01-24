@@ -1,0 +1,29 @@
+{
+  "name": "javatutorbackend",
+  "version": "1.0.0",
+  "description": "",
+  "main": "server.js",
+  "type" : "module",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "nodemon server.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Dhruvisha01/JavaTutorBackend.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Dhruvisha01/JavaTutorBackend/issues"
+  },
+  "homepage": "https://github.com/Dhruvisha01/JavaTutorBackend#readme",
+  "dependencies": {
+    "body-parser": "^1.20.3",
+    "cors": "^2.8.5",
+    "express": "^4.21.1",
+    "node-fetch": "^3.3.2",
+    "nodemon": "^3.1.7"
+  }
+}
