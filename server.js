@@ -13,7 +13,7 @@ import Student from "./models/Student.js"
 
 import OpenAI from "openai";
 const openai = new OpenAI({
-  apiKey: "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", // Replace with your OpenAI API key
+  apiKey: process.env.OPENAI_API_KEY, // Replace with your OpenAI API key
 });
 
 // Middleware to parse JSON
