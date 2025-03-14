@@ -10,6 +10,14 @@ import 'dotenv/config.js';
 import { ObjectId } from "mongodb";
 import Student from "./models/Student.js"
 
+import { dirname } from "path";
+import { fileURLToPath } from "url";
+
+console.log("MongoDB URI:", process.env.MONGO_URI); // Debugging step
+
+// ✅ Manually define __dirname in ES module
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 import OpenAI from "openai";
 const openai = new OpenAI({
@@ -24,7 +32,11 @@ app.use(cors());
 
 app.use(bodyParser.json());
 
-mongoose.connect(process.env.MONGO_URI)
+mongoose.connect(process.env.MONGODB_URI, {
+  useNewUrlParser: true,
+  useUnifiedTopology: true,
+  authMechanism: "SCRAM-SHA-1"
+})
   .then(() => console.log('MongoDB Connected'))
   .catch(err => console.log('MongoDB Connection Error:', err, process.env.MONGO_URI));
 
@@ -567,6 +579,8 @@ if (process.env.NODE_ENV === 'production') {
 
 // Start server
 const PORT = process.env.PORT || 5001;
-app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
-});
+// app.listen(PORT, () => {
+//   console.log(`Server is running on port ${PORT}`);
+// });
+
+export default app;
