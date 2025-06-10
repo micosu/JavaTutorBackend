@@ -13,11 +13,12 @@ import Student from "./models/Student.js"
 import { dirname } from "path";
 import { fileURLToPath } from "url";
 
-console.log("MongoDB URI:", process.env.MONGO_URI); // Debugging step
+console.log("MongoDB URI:", process.env.MONGODB_URI); // Debugging step
 
 // ✅ Manually define __dirname in ES module
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+var hintCounter = 0
 
 import OpenAI from "openai";
 const openai = new OpenAI({
@@ -25,6 +26,25 @@ const openai = new OpenAI({
 });
 
 console.log(process.env.OPENAI_API_KEY)
+
+app.use((req, res, next) => {
+  if (req.method === "POST" && req.headers["content-type"] === "text/plain") {
+    let body = "";
+    req.on("data", (chunk) => {
+      body += chunk.toString();
+    });
+    req.on("end", () => {
+      try {
+        req.body = JSON.parse(body); // Convert text to JSON
+      } catch (error) {
+        console.error("Failed to parse sendBeacon body:", error);
+      }
+      next();
+    });
+  } else {
+    next();
+  }
+});
 // Middleware to parse JSON
 app.use(express.json());
 
@@ -204,26 +224,44 @@ app.get('/api/student/:id', async (req, res) => {
 
 
 app.post('/api/storeConversation', async (req, res) => {
+  hintCounter = 0
+  console.log("Setting hint counter back to 0", hintCounter)
   console.log("Called the store conversation API")
+  console.log("📥 Received request body:", JSON.stringify(req.body, null, 2));
   try {
+
     const { studentId, conversationData } = req.body;
+    console.log("📝 Received request body:", req.body);
 
     if (!studentId || !conversationData) {
+      console.log("⚠️ Invalid data received:", req.body);
       return res.status(400).json({ message: "Invalid data" });
     }
 
     const db = mongoose.connection.useDb('FOW');
+
+    const logsCollection = db.collection('api_logs');  // New collection for logs
+    await logsCollection.insertOne({
+      timestamp: new Date(),
+      rawRequest: req.body
+    });
     const studentsCollection = db.collection('students');
 
-    await studentsCollection.updateOne(
+    const result = await studentsCollection.updateOne(
       { _id: new ObjectId(studentId) },
       { $push: { conversationHistory: conversationData } }
     );
+    console.log("✅ MongoDB Update Result:", result);
 
-    res.json({ message: "Conversation history saved successfully." });
+    if (result.matchedCount === 0) {
+      console.log("⚠️ No matching student found:", studentId);
+      return res.status(404).json({ message: "Student not found" });
+    }
+
+    res.status(201).json({ message: "Conversation history saved successfully." });
   } catch (error) {
     console.error("Error saving conversation history:", error);
-    res.status(500).json({ message: "Internal server error" });
+    res.status(500).json({ message: "Internal server error", error: err.message });
   }
 });
 
@@ -342,8 +380,8 @@ app.post("/api/execute", async (req, res) => {
 });
 
 app.post("/api/debug", async (req, res) => {
-  const { problemStatement, templateCode, userAnswers, correctAnswers, conversationHistory } = req.body;
-
+  const { problemStatement, templateCode, userAnswers, correctAnswers, conversationHistory, hintCounterFrontend } = req.body;
+  console.log("Hint Counter from FrontEnd - ", hintCounterFrontend)
   if (!problemStatement || !templateCode || !userAnswers || !correctAnswers) {
     return res
       .status(400)
@@ -365,11 +403,14 @@ app.post("/api/debug", async (req, res) => {
     return res.status(200).json({ suggestion: "All answers are correct! Great job!" });
   }
 
+  console.log("Conversation history so far - ", conversationHistory, conversationHistory.length)
+
+
   const wrongAnswer = userAnswers[wrongAnswerIndex];
   const correctAnswer = correctAnswers[wrongAnswerIndex];
 
   // Construct the prompt
-  let prompt = `
+  let basePrompt = `
 You are a debugging tutor for Java code. Below is the problem statement and code template:
 
 Problem Statement:
@@ -384,34 +425,79 @@ The correct answer for blank #${wrongAnswerIndex + 1} is "${correctAnswer}".
 You will provide hints one at a time without giving away the full solution.
 `;
 
-  if (conversationHistory && conversationHistory.trim() !== "") {
-    prompt += `
+  if (hintCounterFrontend > 0) {
+    basePrompt += `
 The conversation so far:
 ${conversationHistory}
 
-Based on the conversation above, please provide the next hint in sequence. Provide only one hint in your response.
+Based on the conversation above, please provide the next hint in sequence, but don't mention the hint number in your response. Provide only one hint in your response.
 `;
+
   } else {
-    prompt += `
+    basePrompt += `
 Please provide only the first hint.
 `;
   }
-  try {
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4",
-      messages: [
-        { role: "system", content: "You are a debugging tutor for Java code, helping students improve their solutions by guiding them through hints." },
-        { role: "user", content: prompt },
-      ],
-    });
 
-    const suggestion = completion.choices[0].message.content;
+  let loopNumber = 0
+  while (true) {
+    let prompt = basePrompt;
+    if (loopNumber > 0) {
+      prompt += ` You gave the answer away the last time. Please don't do that.`;
+    }
 
-    // Send feedback about the specific blank
-    res.status(200).json({ suggestion });
-  } catch (error) {
-    console.error("Error with OpenAI API:", error.response?.data || error.message);
-    res.status(500).json({ error: "Failed to fetch debugging suggestions." });
+    try {
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4o",
+        messages: [
+          { role: "system", content: "You are a debugging tutor for Java code, helping students improve their solutions by guiding them through hints." },
+          { role: "user", content: prompt },
+        ],
+      });
+
+      const suggestion = completion.choices[0].message.content;
+
+      // Check for answer leakage only if hintCounterFrontend < 3
+      if (hintCounterFrontend < 3) {
+        const recheckPrompt = `You are an evaluator. 
+Based on the reference answer below, determine whether the given paragraph explicitly contains the correct answer(s) — that is, 
+the exact keyword(s) or phrase(s) as given. If the reference answer is not explicitly written in the paragraph, 
+respond with only: No. If it is explicitly written, respond with only: Yes.
+Do not make inferences or accept paraphrased descriptions. Do not include any explanation.
+
+Reference Answer:
+${correctAnswer}
+
+Student Paragraph:
+${suggestion}`;
+
+        const recheckCompletion = await openai.chat.completions.create({
+          model: "gpt-4o",
+          messages: [
+            { role: "system", content: "You are an evaluator." },
+            { role: "user", content: recheckPrompt },
+          ],
+        });
+
+        const recheckSuggestion = recheckCompletion.choices[0].message.content;
+
+        if (recheckSuggestion.includes("Yes")) {
+          console.log("Oh no, hint contains answer. Retrying...");
+          loopNumber++;
+          continue; // generate again
+        } else {
+          console.log("Hint is safe to send.");
+          return res.status(200).json({ suggestion });
+        }
+      } else {
+        // Hint limit reached, no need to recheck
+        return res.status(200).json({ suggestion });
+      }
+
+    } catch (error) {
+      console.error("Error with OpenAI API:", error.response?.data || error.message);
+      return res.status(500).json({ error: "Failed to fetch debugging suggestions." });
+    }
   }
 });
 
@@ -464,7 +550,7 @@ Please provide **only one hint** in your response.
 
   try {
     const completion = await openai.chat.completions.create({
-      model: "gpt-4",
+      model: "gpt-4o",
       messages: [
         { role: "system", content: "You are a Java MCQ tutor, helping students understand multiple-choice questions through hints." },
         { role: "user", content: prompt },
@@ -480,6 +566,38 @@ Please provide **only one hint** in your response.
   }
 });
 
+app.post('/api/check-question', async (req, res) => {
+  console.log("Made a call to the check question api", req.body);
+  const { question } = req.body;
+
+  if (!question) {
+    return res.status(400).json({ error: "Question is required." });
+  }
+
+  try {
+    const prompt = `You are an evaluator. Based on the student’s question, determine whether it is explicitly asking for the correct answer (i.e., directly requesting the solution rather than asking for help or clarification). Respond with only:
+Yes — if the student is explicitly asking for the answer.
+No — if the student is asking for help, guidance, or clarification but not directly asking for the answer.
+Do not provide explanations or partial answers. Respond with only “Yes” or “No.”
+Question: ${question}`;
+
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [
+        { role: "system", content: "You are a helpful assistant." },
+        { role: "user", content: prompt },
+      ],
+    });
+
+    const answer = response.choices[0].message.content;
+
+    res.status(200).json({ answer });
+  } catch (error) {
+    console.error("Error with OpenAI API:", error.response?.data || error.message);
+    res.status(500).json({ error: "Failed to check question." });
+  }
+})
+
 
 app.post("/api/chat", async (req, res) => {
   const { messages } = req.body;
@@ -490,7 +608,7 @@ app.post("/api/chat", async (req, res) => {
 
   try {
     const response = await openai.chat.completions.create({
-      model: "gpt-4",
+      model: "gpt-4o",
       messages,
     });
 
@@ -505,7 +623,7 @@ app.post("/api/chat", async (req, res) => {
 app.post('/api/submit-test', async (req, res) => {
   console.log("Submitted test:", req.body);
   try {
-    const { studentId, testType, title, answers, correctAnswers } = req.body;
+    const { studentId, testType, title, answers, correctAnswers, reflectionResponse } = req.body;
     if (!studentId || !testType || !title || !answers || !correctAnswers) {
       return res.status(400).json({ message: "Missing required fields" });
     }
@@ -523,12 +641,18 @@ app.post('/api/submit-test', async (req, res) => {
 
     const studentFilter = ObjectId.isValid(studentId) ? { _id: new ObjectId(studentId) } : { studentId };
 
+    const testResult = { answers, score };
+
+    if (testType === "post-test" && reflectionResponse) {
+      testResult.reflection = reflectionResponse;
+    }
     // Update or insert student test results
     const updateResult = await studentsCollection.updateOne(
       studentFilter,
-      { $set: { [`tests.${testField}`]: { answers, score } } },
+      { $set: { [`tests.${testField}`]: testResult } },
       { upsert: true }
     );
+
 
     console.log("Database Update Result:", updateResult);
     res.json({ message: "Test submitted successfully", score });
@@ -579,8 +703,8 @@ if (process.env.NODE_ENV === 'production') {
 
 // Start server
 const PORT = process.env.PORT || 5001;
-// app.listen(PORT, () => {
-//   console.log(`Server is running on port ${PORT}`);
-// });
+app.listen(PORT, () => {
+  console.log(`Server is running on port ${PORT}`);
+});
 
 export default app;

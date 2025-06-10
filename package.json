@@ -19,15 +19,30 @@
     "url": "https://github.com/Dhruvisha01/JavaTutorBackend/issues"
   },
   "homepage": "https://github.com/Dhruvisha01/JavaTutorBackend#readme",
+  "resolutions": {
+    "bson": "6.10.3"
+  },
   "dependencies": {
     "axios": "^1.7.9",
     "body-parser": "^1.20.3",
+    "bson": "^6.10.3",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
     "express": "^4.21.1",
-    "mongoose": "^8.10.0",
+    "mongodb": "^6.14.2",
+    "mongoose": "^8.12.1",
     "node-fetch": "^3.3.2",
     "nodemon": "^3.1.7",
-    "openai": "^4.80.1"
+    "openai": "^4.80.1",
+    "webidl2js": "^18.0.0",
+    "whatwg-url": "^14.0.0"
+  },
+  "overrides": {
+    "mongodb": {
+      "bson": "6.10.3"
+    }
+  },
+  "engines": {
+    "node": "18.x"
   }
 }
