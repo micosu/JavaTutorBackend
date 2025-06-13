@@ -12,6 +12,7 @@ import Student from "./models/Student.js"
 
 import { dirname } from "path";
 import { fileURLToPath } from "url";
+import { v4 as uuidv4 } from "uuid";
 
 console.log("MongoDB URI:", process.env.MONGODB_URI); // Debugging step
 
@@ -64,6 +65,164 @@ mongoose.connect(process.env.MONGODB_URI, {
 app.get("/", (req, res) => {
   res.send("Backend is live!");
 });
+
+app.post("/track-input", async (req, res) => {
+  const { sessionId, fieldName, value } = req.body;
+  try {
+    const db = await connectToMongo();
+    await db.collection("userInteractions").insertOne({
+      sessionId,
+      eventType: "input",
+      fieldName,
+      value,
+      timestamp: new Date(),
+    });
+    res.status(200).send("Input logged");
+  } catch (err) {
+    console.error(err);
+    res.status(500).send("Error logging input");
+  }
+});
+
+app.post("/track-message", async (req, res) => {
+  const { sessionId, sender, message } = req.body;
+  try {
+    const db = await connectToMongo();
+    await db.collection("userInteractions").insertOne({
+      sessionId,
+      eventType: "message",
+      sender,
+      message,
+      timestamp: new Date(),
+    });
+    res.status(200).send("Message logged");
+  } catch (err) {
+    console.error(err);
+    res.status(500).send("Error logging message");
+  }
+});
+
+app.post("/log-attempt", async (req, res) => {
+  const { sessionId, userAnswers, correctAnswers, isCorrect, questionId, moduleId, studentId, eventType, studentGroup } = req.body;
+  try {
+    const db = mongoose.connection.useDb('FOW');
+    await db.collection("userInteractions").insertOne({
+      sessionId,
+      eventType: eventType || "attempt",
+      timestamp: new Date(),
+      userAnswers,
+      correctAnswers,
+      isCorrect,
+      questionId,
+      moduleId,
+      studentId,
+      studentGroup
+    });
+    res.status(200).send("Attempt logged");
+  } catch (err) {
+    console.error("Error logging attempt:", err);
+    res.status(500).send("Failed to log attempt");
+  }
+});
+
+app.post("/log-interaction", async (req, res) => {
+  const {
+    sessionId,
+    studentId,
+    moduleId,
+    questionId,
+    eventType,
+    message,
+    timestamp,
+    studentGroup
+  } = req.body;
+
+  try {
+    const db = mongoose.connection.useDb('FOW');
+    await db.collection("userInteractions").insertOne({
+      sessionId,
+      studentId,
+      moduleId,
+      questionId,
+      eventType,
+      message,
+      timestamp: timestamp ? new Date(timestamp) : new Date(),
+      studentGroup
+    });
+
+    res.status(200).send("Bot message logged");
+  } catch (err) {
+    console.error("Error logging bot message:", err);
+    res.status(500).send("Failed to log bot message");
+  }
+});
+
+app.post("/log-test-event", async (req, res) => {
+  const {
+    sessionId,
+    studentId,
+    moduleId,
+    questionId,
+    eventType,
+    userAnswerIndex,
+    userAnswerText,
+    correctAnswerIndex,
+    correctAnswerText,
+    isCorrect,
+    answers,
+    correctAnswers,
+    reflectionResponse,
+    score,
+    testType,
+    timestamp,
+    studentGroup,
+  } = req.body;
+
+  const db = mongoose.connection.useDb('FOW');
+
+  const entry = {
+    sessionId,
+    studentId,
+    moduleId,
+    eventType,
+    timestamp: timestamp ? new Date(timestamp) : new Date(),
+    studentGroup,
+  };
+
+  if (eventType === "test-mcq-try") {
+    Object.assign(entry, {
+      questionId,
+      userAnswerIndex,
+      userAnswerText,
+      correctAnswerIndex,
+      correctAnswerText,
+      isCorrect,
+    });
+  }
+
+  if (eventType === "test-submit") {
+    Object.assign(entry, {
+      testType,
+      answers,
+      correctAnswers,
+      reflectionResponse,
+      score,
+    });
+  }
+
+  try {
+    await db.collection("testInteractions").insertOne(entry);
+    res.status(200).send("Test event logged");
+  } catch (err) {
+    console.error("Error logging test event:", err);
+    res.status(500).send("Failed to log test event");
+  }
+});
+app.get("/create-session", (req, res) => {
+  const sessionId = uuidv4();
+  res.send({ sessionId });
+});
+
 // API route example
 app.get('/api', (req, res) => {
   res.json({ message: 'Hello from Express!' });
