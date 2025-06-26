@@ -66,7 +66,7 @@ app.get("/", (req, res) => {
   res.send("Backend is live!");
 });
 
-app.post("/track-input", async (req, res) => {
+app.post("/api/track-input", async (req, res) => {
   const { sessionId, fieldName, value } = req.body;
   try {
     const db = await connectToMongo();
@@ -84,7 +84,7 @@ app.post("/track-input", async (req, res) => {
   }
 });
 
-app.post("/track-message", async (req, res) => {
+app.post("/api/track-message", async (req, res) => {
   const { sessionId, sender, message } = req.body;
   try {
     const db = await connectToMongo();
@@ -102,7 +102,7 @@ app.post("/track-message", async (req, res) => {
   }
 });
 
-app.post("/log-attempt", async (req, res) => {
+app.post("/api/log-attempt", async (req, res) => {
   const { sessionId, userAnswers, correctAnswers, isCorrect, questionId, moduleId, studentId, eventType, studentGroup } = req.body;
   try {
     const db = mongoose.connection.useDb('FOW');
@@ -125,7 +125,7 @@ app.post("/log-attempt", async (req, res) => {
   }
 });
 
-app.post("/log-interaction", async (req, res) => {
+app.post("/api/log-interaction", async (req, res) => {
   const {
     sessionId,
     studentId,
@@ -157,7 +157,7 @@ app.post("/log-interaction", async (req, res) => {
   }
 });
 
-app.post("/log-test-event", async (req, res) => {
+app.post("/api/log-test-event", async (req, res) => {
   const {
     sessionId,
     studentId,
@@ -218,7 +218,7 @@ app.post("/log-test-event", async (req, res) => {
     res.status(500).send("Failed to log test event");
   }
 });
-app.get("/create-session", (req, res) => {
+app.get("/api/create-session", (req, res) => {
   const sessionId = uuidv4();
   res.send({ sessionId });
 });
