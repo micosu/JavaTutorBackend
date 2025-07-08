@@ -197,6 +197,7 @@ app.post("/api/log-test-event", async (req, res) => {
       correctAnswerIndex,
       correctAnswerText,
       isCorrect,
+      testType
     });
   }
 
