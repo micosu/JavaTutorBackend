@@ -169,7 +169,7 @@ app.post("/api/log-test-event", async (req, res) => {
     correctAnswerIndex,
     correctAnswerText,
     isCorrect,
-    answers,
+    userAnswers,
     correctAnswers,
     reflectionResponse,
     score,
@@ -202,9 +202,10 @@ app.post("/api/log-test-event", async (req, res) => {
   }
 
   if (eventType === "test-submit") {
+    console.log("Stored in test interaction", req.body, userAnswers);
     Object.assign(entry, {
       testType,
-      answers,
+      userAnswers,
       correctAnswers,
       reflectionResponse,
       score,
