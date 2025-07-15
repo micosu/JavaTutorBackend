@@ -736,9 +736,9 @@ app.post('/api/check-question', async (req, res) => {
   }
 
   try {
-    const prompt = `You are an evaluator. Based on the student’s question, determine whether it is explicitly asking for the correct answer (i.e., directly requesting the solution rather than asking for help or clarification). Respond with only:
-Yes — if the student is explicitly asking for the answer.
-No — if the student is asking for help, guidance, or clarification but not directly asking for the answer.
+    const prompt = `You are an evaluator. Based on the student’s question, determine whether it is explicitly asking for the correct answer (i.e., directly requesting the solution or asking for code to solve the problem, rather than asking for help or clarification). Respond with only:
+Yes — if the student is explicitly asking for the answer or asking for code.
+No — if the student is asking for help, guidance, or clarification but not directly asking for the answer or code.
 Do not provide explanations or partial answers. Respond with only “Yes” or “No.”
 Question: ${question}`;
 
@@ -761,11 +761,18 @@ Question: ${question}`;
 
 
 app.post("/api/chat", async (req, res) => {
-  const { messages } = req.body;
+  let { messages } = req.body;
 
   if (!messages) {
     return res.status(400).json({ error: "Messages are required." });
   }
+
+  const systemMessage = {
+    role: "system",
+    content: "You are a helpful assistant. Do not give away any code or complete solutions. Provide guidance, explanations, or hints instead.",
+  };
+
+  messages = [systemMessage, ...messages];
 
   try {
     const response = await openai.chat.completions.create({
