@@ -1,3 +1,5 @@
+// This file contains all the API routes
+
 import express from "express";
 import path from "path"
 const app = express();
@@ -8,12 +10,11 @@ import axios from "axios";
 import mongoose from "mongoose";
 import 'dotenv/config.js';
 import { ObjectId } from "mongodb";
-import Student from "./models/Student.js"
-
 import { dirname } from "path";
 import { fileURLToPath } from "url";
 import { v4 as uuidv4 } from "uuid";
 
+// Make sure to check if MongoDB URI is defined
 console.log("MongoDB URI:", process.env.MONGODB_URI); // Debugging step
 
 // ✅ Manually define __dirname in ES module
@@ -21,13 +22,13 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 var hintCounter = 0
 
+// Get Open AI API key from env file
 import OpenAI from "openai";
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY, // Replace with your OpenAI API key
 });
 
-console.log(process.env.OPENAI_API_KEY)
-
+// Middleware to parse text/plain
 app.use((req, res, next) => {
   if (req.method === "POST" && req.headers["content-type"] === "text/plain") {
     let body = "";
@@ -46,6 +47,7 @@ app.use((req, res, next) => {
     next();
   }
 });
+
 // Middleware to parse JSON
 app.use(express.json());
 
@@ -53,6 +55,7 @@ app.use(cors());
 
 app.use(bodyParser.json());
 
+// Connecting to MonogoDB database - please keep the console logs here
 mongoose.connect(process.env.MONGODB_URI, {
   useNewUrlParser: true,
   useUnifiedTopology: true,
@@ -62,46 +65,12 @@ mongoose.connect(process.env.MONGODB_URI, {
   .catch(err => console.log('MongoDB Connection Error:', err, process.env.MONGO_URI));
 
 
+// To verify that backend is running
 app.get("/", (req, res) => {
   res.send("Backend is live!");
 });
 
-app.post("/api/track-input", async (req, res) => {
-  const { sessionId, fieldName, value } = req.body;
-  try {
-    const db = await connectToMongo();
-    await db.collection("userInteractions").insertOne({
-      sessionId,
-      eventType: "input",
-      fieldName,
-      value,
-      timestamp: new Date(),
-    });
-    res.status(200).send("Input logged");
-  } catch (err) {
-    console.error(err);
-    res.status(500).send("Error logging input");
-  }
-});
-
-app.post("/api/track-message", async (req, res) => {
-  const { sessionId, sender, message } = req.body;
-  try {
-    const db = await connectToMongo();
-    await db.collection("userInteractions").insertOne({
-      sessionId,
-      eventType: "message",
-      sender,
-      message,
-      timestamp: new Date(),
-    });
-    res.status(200).send("Message logged");
-  } catch (err) {
-    console.error(err);
-    res.status(500).send("Error logging message");
-  }
-});
-
+// Route to log attempts (code attempts and MCQ attempts) in the userInteractions collection. 
 app.post("/api/log-attempt", async (req, res) => {
   const { sessionId, userAnswers, correctAnswers, isCorrect, questionId, moduleId, studentId, eventType, studentGroup } = req.body;
   try {
@@ -125,6 +94,7 @@ app.post("/api/log-attempt", async (req, res) => {
   }
 });
 
+// Route to log bot messages, user messages, reveal-answer
 app.post("/api/log-interaction", async (req, res) => {
   const {
     sessionId,
@@ -157,6 +127,7 @@ app.post("/api/log-interaction", async (req, res) => {
   }
 });
 
+// Route to log test interactions and test submissions in the testInteractions collection
 app.post("/api/log-test-event", async (req, res) => {
   const {
     sessionId,
@@ -220,6 +191,8 @@ app.post("/api/log-test-event", async (req, res) => {
     res.status(500).send("Failed to log test event");
   }
 });
+
+// Route to create a new session
 app.get("/api/create-session", (req, res) => {
   const sessionId = uuidv4();
   res.send({ sessionId });
@@ -230,7 +203,7 @@ app.get('/api', (req, res) => {
   res.json({ message: 'Hello from Express!' });
 });
 
-// ✅ Route to fetch completed questions for a student
+// Route to fetch completed questions for a student
 app.get('/api/student-progress/:studentId', async (req, res) => {
   try {
     const { studentId } = req.params;
@@ -256,7 +229,7 @@ app.get('/api/student-progress/:studentId', async (req, res) => {
   }
 });
 
-// ✅ Route to update completed questions
+// Route to update completed questions
 app.post('/api/student-progress', async (req, res) => {
   try {
     const { studentId, moduleId, questionId, isChecked } = req.body;
@@ -300,6 +273,7 @@ app.post('/api/student-progress', async (req, res) => {
   }
 });
 
+// Route to fetch student test progress
 app.get("/api/student-test-progress/:studentId", async (req, res) => {
   console.log("Fetching test progress for student ID:", req.params.studentId);
   try {
@@ -325,6 +299,7 @@ app.get("/api/student-test-progress/:studentId", async (req, res) => {
 });
 
 
+// Route to update student test progress
 app.post("/api/student-test-progress", async (req, res) => {
   try {
     const { studentId, moduleId, testType, isChecked } = req.body;
@@ -349,6 +324,7 @@ app.post("/api/student-test-progress", async (req, res) => {
 });
 
 
+// Route to fetch student details
 app.get('/api/student/:id', async (req, res) => {
   console.log("Tried fetching name for ID:", req.params.id);
 
@@ -365,7 +341,6 @@ app.get('/api/student/:id', async (req, res) => {
       { _id: new ObjectId(req.params.id) }
     );
     // Find student by ID
-
     if (!student) {
       return res.status(404).json({ error: "Student not found" });
     }
@@ -384,6 +359,7 @@ app.get('/api/student/:id', async (req, res) => {
 });
 
 
+// Route to store entire conversation history for a student in the students collection 
 app.post('/api/storeConversation', async (req, res) => {
   hintCounter = 0
   console.log("Setting hint counter back to 0", hintCounter)
@@ -426,6 +402,8 @@ app.post('/api/storeConversation', async (req, res) => {
   }
 });
 
+
+// Route to check consent status
 app.get('/api/checkConsent/:studentId', async (req, res) => {
   console.log("Called the check consent API");
   try {
@@ -452,6 +430,7 @@ app.get('/api/checkConsent/:studentId', async (req, res) => {
   }
 });
 
+// Rpute to store consent data
 app.post('/api/storeConsent', async (req, res) => {
   console.log("Called the store consent API")
   try {
@@ -491,6 +470,7 @@ app.post('/api/storeConsent', async (req, res) => {
   }
 })
 
+// Route to handle login
 app.post('/api/login', async (req, res) => {
   console.log("Made a call to the login api")
   try {
@@ -515,6 +495,7 @@ app.post('/api/login', async (req, res) => {
   }
 });
 
+// Route to execute code by calling JDoodle
 app.post("/api/execute", async (req, res) => {
   const { clientId, clientSecret, script, stdin, language, versionIndex } = req.body;
 
@@ -540,6 +521,7 @@ app.post("/api/execute", async (req, res) => {
   }
 });
 
+// Route to debug code by calling Open AI
 app.post("/api/debug", async (req, res) => {
   const { problemStatement, templateCode, userAnswers, correctAnswers, conversationHistory, hintCounterFrontend } = req.body;
   console.log("Hint Counter from FrontEnd - ", hintCounterFrontend)
@@ -563,8 +545,6 @@ app.post("/api/debug", async (req, res) => {
     console.log("No wrong answers")
     return res.status(200).json({ suggestion: "All answers are correct! Great job!" });
   }
-
-  console.log("Conversation history so far - ", conversationHistory, conversationHistory.length)
 
 
   const wrongAnswer = userAnswers[wrongAnswerIndex];
@@ -662,6 +642,7 @@ ${suggestion}`;
   }
 });
 
+// API endpoint for MCQ feedback by calling another Open AI instance
 app.post("/api/mcq-feedback", async (req, res) => {
   const { problemStatement, options, userAnswer, correctAnswers, conversationHistory } = req.body;
 
@@ -669,12 +650,8 @@ app.post("/api/mcq-feedback", async (req, res) => {
     return res.status(400).json({ error: "problemStatement, options, userAnswer, and correctAnswers are required." });
   }
 
-  console.log("User's Answer:", userAnswer);
-  console.log("Correct Answers:", correctAnswers);
-
   const correctAnswersArray = Array.isArray(correctAnswers) ? correctAnswers : [correctAnswers];
-  console.log("Correct Answers (processed as array):", correctAnswersArray);
-
+  
   // If the answer is correct, return success message
   if (correctAnswersArray.some(answer => answer.trim() === userAnswer.trim())) {
     return res.status(200).json({ feedback: "🎉 Congratulations! You got the right answer! You can move on." });
@@ -727,6 +704,7 @@ Please provide **only one hint** in your response.
   }
 });
 
+// API endpoint for checking if student is directly asking for the answer
 app.post('/api/check-question', async (req, res) => {
   console.log("Made a call to the check question api", req.body);
   const { question } = req.body;
@@ -759,7 +737,7 @@ Question: ${question}`;
   }
 })
 
-
+// API endpoint for when user types in the response and chats with the bot
 app.post("/api/chat", async (req, res) => {
   let { messages } = req.body;
 
@@ -788,6 +766,7 @@ app.post("/api/chat", async (req, res) => {
   }
 });
 
+// API endpoint for submitting a test
 app.post('/api/submit-test', async (req, res) => {
   console.log("Submitted test:", req.body);
   try {
@@ -833,6 +812,7 @@ app.post('/api/submit-test', async (req, res) => {
   }
 })
 
+// API endpoint for recording a student's reveal answer button press in the students database
 app.post('/api/reveal-answer', async (req, res) => {
   const { studentId, moduleId, questionId } = req.body;
 
@@ -861,6 +841,7 @@ app.post('/api/reveal-answer', async (req, res) => {
   }
 
 })
+
 // Serve React app in production
 if (process.env.NODE_ENV === 'production') {
   app.use(express.static(path.join(__dirname, 'client/build')));
