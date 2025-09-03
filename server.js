@@ -62,7 +62,7 @@ mongoose.connect(process.env.MONGODB_URI, {
   authMechanism: "SCRAM-SHA-1"
 })
   .then(() => console.log('MongoDB Connected'))
-  .catch(err => console.log('MongoDB Connection Error:', err, process.env.MONGO_URI));
+  .catch(err => console.log('MongoDB Connection Error:', err, process.env.MONGODB_URI));
 
 
 // To verify that backend is running
@@ -497,7 +497,9 @@ app.post('/api/login', async (req, res) => {
 
 // Route to execute code by calling JDoodle
 app.post("/api/execute", async (req, res) => {
-  const { clientId, clientSecret, script, stdin, language, versionIndex } = req.body;
+  const { script, stdin, language, versionIndex } = req.body;
+  const clientId = process.env.JDOODLE_CLIENT_ID;
+  const clientSecret = process.env.JDOODLE_CLIENT_SECRET;
 
   try {
     const response = await fetch("https://api.jdoodle.com/v1/execute", {
