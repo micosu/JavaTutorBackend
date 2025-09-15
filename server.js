@@ -541,6 +541,7 @@ app.post("/api/debug", async (req, res) => {
       break;
     }
   }
+  console.log("Index of wrong answer-------", wrongAnswerIndex);
 
   // If all answers are correct
   if (wrongAnswerIndex === -1) {
@@ -551,36 +552,26 @@ app.post("/api/debug", async (req, res) => {
 
   const wrongAnswer = userAnswers[wrongAnswerIndex];
   const correctAnswer = correctAnswers[wrongAnswerIndex];
+  console.log("wrongAnswer-------", wrongAnswer);
+  console.log("correctAnswer-------", correctAnswer);
 
   // Construct the prompt
   let basePrompt = `
-You are a debugging tutor for Java code. Below is the problem statement and code template:
+    You are a debugging tutor for Java code. Below is the problem statement and code template:
 
-Problem Statement:
-${problemStatement}
+    Problem Statement:
+    ${problemStatement}
 
-Template Code:
-${templateCode}
+    Template Code:
+    ${templateCode}
+    
+    ${hintCounterFrontend > 0 ? `Conversation so far:\n${conversationHistory}\n` : ""}
 
-The user's answer for blank #${wrongAnswerIndex + 1} is "${wrongAnswer}".
-The correct answer for blank #${wrongAnswerIndex + 1} is "${correctAnswer}".
+    ### IMPORTANT: The user's answer for blank #${wrongAnswerIndex + 1} is "${wrongAnswer}".
+    The correct answer for blank #${wrongAnswerIndex + 1} is "${correctAnswer}".
 
-You will provide hints one at a time without giving away the full solution.
-`;
-
-  if (hintCounterFrontend > 0) {
-    basePrompt += `
-The conversation so far:
-${conversationHistory}
-
-Based on the conversation above, please provide the next hint in sequence, but don't mention the hint number in your response. Provide only one hint in your response.
-`;
-
-  } else {
-    basePrompt += `
-Please provide only the first hint.
-`;
-  }
+    ### Your only task is to guide the student toward fixing blank #${wrongAnswerIndex + 1} by giving them 1 hint without giving away the full solution.
+  `;
 
   let loopNumber = 0
   while (true) {
@@ -603,16 +594,16 @@ Please provide only the first hint.
       // Check for answer leakage only if hintCounterFrontend < 3
       if (hintCounterFrontend < 3) {
         const recheckPrompt = `You are an evaluator. 
-Based on the reference answer below, determine whether the given paragraph explicitly contains the correct answer(s) — that is, 
-the exact keyword(s) or phrase(s) as given. If the reference answer is not explicitly written in the paragraph, 
-respond with only: No. If it is explicitly written, respond with only: Yes.
-Do not make inferences or accept paraphrased descriptions. Do not include any explanation.
+          Based on the reference answer below, determine whether the given paragraph explicitly contains the correct answer(s) — that is, 
+          the exact keyword(s) or phrase(s) as given. If the reference answer is not explicitly written in the paragraph, 
+          respond with only: No. If it is explicitly written, respond with only: Yes.
+          Do not make inferences or accept paraphrased descriptions. Do not include any explanation.
 
-Reference Answer:
-${correctAnswer}
+          Reference Answer:
+          ${correctAnswer}
 
-Student Paragraph:
-${suggestion}`;
+          Student Paragraph:
+          ${suggestion}`;
 
         const recheckCompletion = await openai.chat.completions.create({
           model: "gpt-4o",
@@ -646,11 +637,13 @@ ${suggestion}`;
 
 // API endpoint for MCQ feedback by calling another Open AI instance
 app.post("/api/mcq-feedback", async (req, res) => {
-  const { problemStatement, options, userAnswer, correctAnswers, conversationHistory } = req.body;
+  const { problemStatement, code, options, userAnswer, correctAnswers, conversationHistory } = req.body;
 
-  if (!problemStatement || !options || !userAnswer || !correctAnswers) {
+  if (!problemStatement || !code || !options || !userAnswer || !correctAnswers) {
     return res.status(400).json({ error: "problemStatement, options, userAnswer, and correctAnswers are required." });
   }
+
+  console.log("conversation history-------", conversationHistory);
 
   const correctAnswersArray = Array.isArray(correctAnswers) ? correctAnswers : [correctAnswers];
   
@@ -661,32 +654,37 @@ app.post("/api/mcq-feedback", async (req, res) => {
 
   // Construct a prompt for OpenAI
   let prompt = `
-You are a Java tutor helping students understand multiple-choice questions. Below is the problem statement and answer options:
+    You are a Java tutor helping students understand multiple-choice questions. Below is the problem statement, code, and answer options:
 
-Problem Statement:
-${problemStatement}
+    Problem Statement:
+    ${problemStatement}
 
-Options:
-${options.map((option, index) => `${index + 1}. ${option}`).join("\n")}
+    Code: 
+    ${code}
 
-The user selected: "${userAnswer}", which is incorrect.
-The correct answer(s): "${correctAnswersArray.join(", ")}".
+    Options:
+    ${options.map((option, index) => `${index + 1}. ${option}`).join("\n")}
 
-You will provide hints to help the student understand why their answer is wrong and guide them towards the correct choice without directly revealing the answer.
-`;
+    The user selected: "${userAnswer}", which is incorrect.
+    The correct answer(s): "${correctAnswersArray.join(", ")}".
 
-  if (conversationHistory && conversationHistory.trim() !== "") {
-    prompt += `
-Previous conversation:
-${conversationHistory}
+    ${conversationHistory && conversationHistory.trim() !== "" ? `Conversation so far:\n${conversationHistory}\n` : ""}
 
-Based on this conversation, please provide the next hint in sequence. Provide only **one hint** in your response.
-`;
-  } else {
-    prompt += `
-Please provide **only one hint** in your response.
-`;
-  }
+    You will provide hints to help the student understand why their answer is wrong and guide them towards the correct choice without directly revealing the answer.
+    `;
+
+//   if (conversationHistory && conversationHistory.trim() !== "") {
+//     prompt += `
+// Previous conversation:
+// ${conversationHistory}
+
+// Based on this conversation, please provide the next hint in sequence. Provide only **one hint** in your response.
+// `;
+//   } else {
+//     prompt += `
+// Please provide **only one hint** in your response.
+// `;
+//   }
 
   try {
     const completion = await openai.chat.completions.create({
@@ -716,8 +714,8 @@ app.post('/api/check-question', async (req, res) => {
   }
 
   try {
-    const prompt = `You are an evaluator. Based on the student’s question, determine whether it is explicitly asking for the correct answer (i.e., directly requesting the solution or asking for code to solve the problem, rather than asking for help or clarification). Respond with only:
-Yes — if the student is explicitly asking for the answer or asking for code.
+    const prompt = `You are an evaluator. Based on the student’s question, determine whether it is explicitly asking for the correct answer (i.e., directly requesting the solution or asking for code or an explanation to solve the problem, rather than asking for help or clarification). Respond with only:
+Yes — if the student is explicitly asking for the answer or asking for code or an explanation that would give them the answer.
 No — if the student is asking for help, guidance, or clarification but not directly asking for the answer or code.
 Do not provide explanations or partial answers. Respond with only “Yes” or “No.”
 Question: ${question}`;
