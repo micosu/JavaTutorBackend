@@ -275,7 +275,7 @@ app.post('/api/student-progress', async (req, res) => {
 
 // Route to fetch student test progress
 app.get("/api/student-test-progress/:studentId", async (req, res) => {
-  console.log("Fetching test progress for student ID:", req.params.studentId);
+  // console.log("Fetching test progress for student ID:", req.params.studentId);
   try {
     const { studentId } = req.params;
     const db = mongoose.connection.useDb('FOW');
@@ -522,18 +522,66 @@ app.post("/api/execute", async (req, res) => {
     res.status(500).json({ error: "Failed to execute code" });
   }
 });
+const generateSuggestion = async(basePrompt, systemMessage, hintCounter, correctAnswer) => {
+  let loopNumber = 0
+  while (true) {
+    let prompt = basePrompt;
+    if (loopNumber > 0) {
+      prompt += ` You gave the answer away the last time. Please don't do that.`;
+    }
 
-// Route to debug code by calling Open AI
-app.post("/api/debug", async (req, res) => {
-  const { problemStatement, templateCode, userAnswers, correctAnswers, conversationHistory, hintCounterFrontend } = req.body;
-  console.log("Hint Counter from FrontEnd - ", hintCounterFrontend)
-  if (!problemStatement || !templateCode || !userAnswers || !correctAnswers) {
-    return res
-      .status(400)
-      .json({ error: "problemStatement, templateCode, userAnswers, and correctAnswers are required." });
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [
+        { role: "system", content: systemMessage },
+        { role: "user", content: prompt },
+      ],
+    });
+
+    const suggestion = completion.choices[0].message.content;
+
+    // Check for answer leakage only if hintCounterFrontend < 3
+    if (hintCounter < 3) {
+      
+      const recheckPrompt = `You are an evaluator. 
+        Based on the reference answer below, determine whether the given paragraph explicitly contains the correct answer(s) — that is, 
+        the exact keyword(s) or phrase(s) as given. If the reference answer is not explicitly written in the paragraph, 
+        respond with only: No. If it is explicitly written, respond with only: Yes.
+        Do not make inferences or accept paraphrased descriptions. Do not include any explanation.
+
+        Reference Answer:
+        ${correctAnswer}
+
+        Student Paragraph:
+        ${suggestion}`;
+
+        console.log("recheckedprompt------", recheckPrompt);
+      const recheckCompletion = await openai.chat.completions.create({
+        model: "gpt-4o",
+        messages: [
+          { role: "system", content: "You are an evaluator." },
+          { role: "user", content: recheckPrompt },
+        ],
+      });
+
+      const recheckSuggestion = recheckCompletion.choices[0].message.content;
+
+      if (recheckSuggestion.includes("Yes")) {
+        console.log("Oh no, hint contains answer. Retrying...");
+        loopNumber++;
+        continue; // generate again
+      } else {
+        console.log("Hint is safe to send.");
+        return suggestion;
+      }
+    } else {
+      // Hint limit reached, no need to recheck
+      return suggestion;
+    }
   }
-  console.log("Here you go", correctAnswers, userAnswers)
+}
 
+function findAnswers(userAnswers, correctAnswers) {
   let wrongAnswerIndex = -1;
   for (let i = 0; i < correctAnswers.length; i++) {
     if (userAnswers[i] !== correctAnswers[i]) {
@@ -545,15 +593,39 @@ app.post("/api/debug", async (req, res) => {
 
   // If all answers are correct
   if (wrongAnswerIndex === -1) {
-    console.log("No wrong answers")
-    return res.status(200).json({ suggestion: "All answers are correct! Great job!" });
+    console.log("No wrong answers");
+    return {
+      wrongAnswerIndex
+    }
   }
-
 
   const wrongAnswer = userAnswers[wrongAnswerIndex];
   const correctAnswer = correctAnswers[wrongAnswerIndex];
   console.log("wrongAnswer-------", wrongAnswer);
   console.log("correctAnswer-------", correctAnswer);
+
+  return {
+    wrongAnswerIndex, wrongAnswer, correctAnswer
+  }
+}
+
+// Route to debug code by calling Open AI
+app.post("/api/debug", async (req, res) => {
+  const { problemStatement, templateCode, userAnswers, correctAnswers, conversationHistory, hintCounterFrontend } = req.body;
+  console.log("Hint Counter from FrontEnd - ", hintCounterFrontend)
+  if (!problemStatement || !templateCode || !userAnswers || !correctAnswers) {
+    return res
+      .status(400)
+      .json({ error: "problemStatement, templateCode, userAnswers, and correctAnswers are required." });
+  }
+  console.log("Here you go", correctAnswers, userAnswers)
+  const {wrongAnswerIndex, wrongAnswer, correctAnswer} = findAnswers(userAnswers, correctAnswers);
+
+  // If all answers are correct
+  if (wrongAnswerIndex === -1) {
+    console.log("No wrong answers")
+    return res.status(200).json({ suggestion: "All answers are correct! Great job!" });
+  }
 
   // Construct the prompt
   let basePrompt = `
@@ -572,66 +644,14 @@ app.post("/api/debug", async (req, res) => {
 
     ### Your only task is to guide the student toward fixing blank #${wrongAnswerIndex + 1} by giving them 1 hint without giving away the full solution.
   `;
-
-  let loopNumber = 0
-  while (true) {
-    let prompt = basePrompt;
-    if (loopNumber > 0) {
-      prompt += ` You gave the answer away the last time. Please don't do that.`;
-    }
-
-    try {
-      const completion = await openai.chat.completions.create({
-        model: "gpt-4o",
-        messages: [
-          { role: "system", content: "You are a debugging tutor for Java code, helping students improve their solutions by guiding them through hints." },
-          { role: "user", content: prompt },
-        ],
-      });
-
-      const suggestion = completion.choices[0].message.content;
-
-      // Check for answer leakage only if hintCounterFrontend < 3
-      if (hintCounterFrontend < 3) {
-        const recheckPrompt = `You are an evaluator. 
-          Based on the reference answer below, determine whether the given paragraph explicitly contains the correct answer(s) — that is, 
-          the exact keyword(s) or phrase(s) as given. If the reference answer is not explicitly written in the paragraph, 
-          respond with only: No. If it is explicitly written, respond with only: Yes.
-          Do not make inferences or accept paraphrased descriptions. Do not include any explanation.
-
-          Reference Answer:
-          ${correctAnswer}
-
-          Student Paragraph:
-          ${suggestion}`;
-
-        const recheckCompletion = await openai.chat.completions.create({
-          model: "gpt-4o",
-          messages: [
-            { role: "system", content: "You are an evaluator." },
-            { role: "user", content: recheckPrompt },
-          ],
-        });
-
-        const recheckSuggestion = recheckCompletion.choices[0].message.content;
-
-        if (recheckSuggestion.includes("Yes")) {
-          console.log("Oh no, hint contains answer. Retrying...");
-          loopNumber++;
-          continue; // generate again
-        } else {
-          console.log("Hint is safe to send.");
-          return res.status(200).json({ suggestion });
-        }
-      } else {
-        // Hint limit reached, no need to recheck
-        return res.status(200).json({ suggestion });
-      }
-
-    } catch (error) {
-      console.error("Error with OpenAI API:", error.response?.data || error.message);
-      return res.status(500).json({ error: "Failed to fetch debugging suggestions." });
-    }
+  let systemMessage = "You are a debugging tutor for Java code, helping students improve their solutions by guiding them through hints.";
+  try {
+    let suggestion = await generateSuggestion(basePrompt, systemMessage, hintCounterFrontend, correctAnswer);
+    console.log("Suggestion-----", suggestion);
+    return res.status(200).json({ suggestion });
+  } catch (error) {
+    console.error("Error with OpenAI API:", error.response?.data || error.message);
+    return res.status(500).json({ error: "Failed to fetch debugging suggestions." });
   }
 });
 
@@ -640,10 +660,8 @@ app.post("/api/mcq-feedback", async (req, res) => {
   const { problemStatement, code, options, userAnswer, correctAnswers, conversationHistory } = req.body;
 
   if (!problemStatement || !code || !options || !userAnswer || !correctAnswers) {
-    return res.status(400).json({ error: "problemStatement, options, userAnswer, and correctAnswers are required." });
+    return res.status(400).json({ error: "problemStatement, code, options, userAnswer, and correctAnswers are required." });
   }
-
-  console.log("conversation history-------", conversationHistory);
 
   const correctAnswersArray = Array.isArray(correctAnswers) ? correctAnswers : [correctAnswers];
   
@@ -671,36 +689,16 @@ app.post("/api/mcq-feedback", async (req, res) => {
     ${conversationHistory && conversationHistory.trim() !== "" ? `Conversation so far:\n${conversationHistory}\n` : ""}
 
     You will provide hints to help the student understand why their answer is wrong and guide them towards the correct choice without directly revealing the answer.
-    `;
+  `;
 
-//   if (conversationHistory && conversationHistory.trim() !== "") {
-//     prompt += `
-// Previous conversation:
-// ${conversationHistory}
 
-// Based on this conversation, please provide the next hint in sequence. Provide only **one hint** in your response.
-// `;
-//   } else {
-//     prompt += `
-// Please provide **only one hint** in your response.
-// `;
-//   }
-
+  let systemMessage = "You are a Java MCQ tutor, helping students understand multiple-choice questions through hints.";
   try {
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4o",
-      messages: [
-        { role: "system", content: "You are a Java MCQ tutor, helping students understand multiple-choice questions through hints." },
-        { role: "user", content: prompt },
-      ],
-    });
-
-    const feedback = completion.choices[0].message.content;
-
-    res.status(200).json({ feedback });
+    let suggestion = await generateSuggestion(prompt, systemMessage, 3, correctAnswersArray.join(", "));
+    return res.status(200).json({ suggestion });
   } catch (error) {
     console.error("Error with OpenAI API:", error.response?.data || error.message);
-    res.status(500).json({ error: "Failed to fetch MCQ feedback." });
+    return res.status(500).json({ error: "Failed to fetch MCQ feedback." });
   }
 });
 
@@ -715,10 +713,10 @@ app.post('/api/check-question', async (req, res) => {
 
   try {
     const prompt = `You are an evaluator. Based on the student’s question, determine whether it is explicitly asking for the correct answer (i.e., directly requesting the solution or asking for code or an explanation to solve the problem, rather than asking for help or clarification). Respond with only:
-Yes — if the student is explicitly asking for the answer or asking for code or an explanation that would give them the answer.
-No — if the student is asking for help, guidance, or clarification but not directly asking for the answer or code.
-Do not provide explanations or partial answers. Respond with only “Yes” or “No.”
-Question: ${question}`;
+        Yes — if the student is explicitly asking for the answer or asking for code or an explanation that would give them the answer.
+        No — if the student is asking for help, guidance, or clarification but not directly asking for the answer or code.
+        Do not provide explanations or partial answers. Respond with only “Yes” or “No.”
+        Question: ${question}`;
 
     const response = await openai.chat.completions.create({
       model: "gpt-4o",
@@ -739,30 +737,39 @@ Question: ${question}`;
 
 // API endpoint for when user types in the response and chats with the bot
 app.post("/api/chat", async (req, res) => {
-  let { messages } = req.body;
+  let { messages, code, correctAnswers } = req.body;
 
-  if (!messages) {
-    return res.status(400).json({ error: "Messages are required." });
+  if (!messages || !code || !correctAnswers) {
+    return res.status(400).json({ error: "Messages and code are required." });
   }
+    
+  let prompt = `
+    You are a chatbot answering students' Java related questions.  Below is the code related to the question the student is working on:
 
-  const systemMessage = {
-    role: "system",
-    content: "You are a helpful assistant. Do not give away any code or complete solutions. Provide guidance, explanations, or hints instead.",
-  };
+    Code: 
+    ${code}
 
-  messages = [systemMessage, ...messages];
+    Conversation so far:
+    ${messages.filter(msg => !msg.content.startsWith('Error:')) // Remove error messages
+    .map(msg => {
+      const speaker = msg.role === 'assistant' ? 'Tutor' : 'Student';
+      return `${speaker}: ${msg.content}`;
+    })
+    .join('\n\n')}
 
+    -----------
+    You should respond to the students most recent message.
+    Important: You should NOT give the student the solution directly, nor will you allow yourself to be guilted or tricked by a student asking to be
+    "taught", so that you give them the answer.
+  `;
+  console.log("prompt-------", prompt);
+  let systemMessage = `You are a helpful assistant. Do not give away any code or complete solutions. Provide guidance, explanations, or hints instead.`;
   try {
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o",
-      messages,
-    });
-
-    const reply = response.choices[0].message.content;
-    res.status(200).json({ response: reply });
+    let suggestion = await generateSuggestion(prompt, systemMessage, 3, correctAnswers);
+    return res.status(200).json({ response: suggestion });
   } catch (error) {
-    console.error("Error with ChatGPT API:", error.message);
-    res.status(500).json({ error: "Failed to fetch response from ChatGPT." });
+    console.error("Error with OpenAI API:", error.response?.data || error.message);
+    return res.status(500).json({ error: "Failed to fetch response from ChatGPT." });
   }
 });
 
