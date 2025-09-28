@@ -145,6 +145,7 @@ app.post("/api/log-test-event", async (req, res) => {
     reflectionResponse,
     score,
     testType,
+    balancedTestType,
     timestamp,
     studentGroup,
   } = req.body;
@@ -168,7 +169,8 @@ app.post("/api/log-test-event", async (req, res) => {
       correctAnswerIndex,
       correctAnswerText,
       isCorrect,
-      testType
+      testType,
+      balancedTestType
     });
   }
 
@@ -176,6 +178,7 @@ app.post("/api/log-test-event", async (req, res) => {
     console.log("Stored in test interaction", req.body, userAnswers);
     Object.assign(entry, {
       testType,
+      balancedTestType,
       userAnswers,
       correctAnswers,
       reflectionResponse,
@@ -777,8 +780,8 @@ app.post("/api/chat", async (req, res) => {
 app.post('/api/submit-test', async (req, res) => {
   console.log("Submitted test:", req.body);
   try {
-    const { studentId, testType, title, answers, correctAnswers, reflectionResponse } = req.body;
-    if (!studentId || !testType || !title || !answers || !correctAnswers) {
+    const { studentId, testType, balancedTestType, title, answers, correctAnswers, reflectionResponse } = req.body;
+    if (!studentId || !testType || !balancedTestType || !title || !answers || !correctAnswers) {
       return res.status(400).json({ message: "Missing required fields" });
     }
     const testField = `${testType}-${title}`;
@@ -795,7 +798,7 @@ app.post('/api/submit-test', async (req, res) => {
 
     const studentFilter = ObjectId.isValid(studentId) ? { _id: new ObjectId(studentId) } : { studentId };
 
-    const testResult = { answers, score };
+    const testResult = { answers, score, balancedTestType };
 
     if (testType === "post-test" && reflectionResponse) {
       testResult.reflection = reflectionResponse;
