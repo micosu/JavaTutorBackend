@@ -785,11 +785,11 @@ app.post('/api/submit-test', async (req, res) => {
       return res.status(400).json({ message: "Missing required fields" });
     }
     const testField = `${testType}-${title}`;
-    let score = 0;
+    let raw_score = 0;
 
     Object.keys(answers).forEach(qId => {
       if (answers[qId] == correctAnswers[qId]) { // Compare as string to avoid type mismatch
-        score++;
+        raw_score++;
       }
     });
 
@@ -797,6 +797,7 @@ app.post('/api/submit-test', async (req, res) => {
     const studentsCollection = db.collection('students');
 
     const studentFilter = ObjectId.isValid(studentId) ? { _id: new ObjectId(studentId) } : { studentId };
+    const score = `${raw_score}/${Object.keys(correctAnswers).length}`;
 
     const testResult = { answers, score, balancedTestType };
 
