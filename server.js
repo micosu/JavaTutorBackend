@@ -697,8 +697,9 @@ app.post("/api/mcq-feedback", async (req, res) => {
 
   let systemMessage = "You are a Java MCQ tutor, helping students understand multiple-choice questions through hints.";
   try {
-    let suggestion = await generateSuggestion(prompt, systemMessage, 3, correctAnswersArray.join(", "));
-    return res.status(200).json({ suggestion });
+    let feedback = await generateSuggestion(prompt, systemMessage, 3, correctAnswersArray.join(", "));
+    console.log("FEEDBACK: ", feedback);
+    return res.status(200).json({ feedback });
   } catch (error) {
     console.error("Error with OpenAI API:", error.response?.data || error.message);
     return res.status(500).json({ error: "Failed to fetch MCQ feedback." });
