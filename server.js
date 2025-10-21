@@ -587,7 +587,8 @@ const generateSuggestion = async(basePrompt, systemMessage, hintCounter, correct
 function findAnswers(userAnswers, correctAnswers) {
   let wrongAnswerIndex = -1;
   for (let i = 0; i < correctAnswers.length; i++) {
-    if (userAnswers[i] !== correctAnswers[i]) {
+    let options = correctAnswers[i].split("|#|");
+    if (!options.includes(userAnswers[i])) {
       wrongAnswerIndex = i;
       break;
     }
@@ -605,6 +606,9 @@ function findAnswers(userAnswers, correctAnswers) {
   const wrongAnswer = userAnswers[wrongAnswerIndex];
   const correctAnswer = correctAnswers[wrongAnswerIndex];
   console.log("wrongAnswer-------", wrongAnswer);
+   if (Array.isArray(correctAnswer)) {
+    correctAnswer = correctAnswer.split("|#|")[0];
+  }
   console.log("correctAnswer-------", correctAnswer);
 
   return {
