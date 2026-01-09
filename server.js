@@ -28,6 +28,8 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY, // Replace with your OpenAI API key
 });
 
+const BLOCKED_MODULES = ["Module 2", "Module 3"];
+
 // Middleware to parse text/plain
 app.use((req, res, next) => {
   if (req.method === "POST" && req.headers["content-type"] === "text/plain") {
@@ -204,6 +206,35 @@ app.get("/api/create-session", (req, res) => {
 // API route example
 app.get('/api', (req, res) => {
   res.json({ message: 'Hello from Express!' });
+});
+
+const getStudent = async (req, res) => {
+  const { studentId } = req.params;
+
+  // Validate MongoDB ObjectId
+  if (!mongoose.Types.ObjectId.isValid(studentId)) {
+    return res.status(400).json({ error: "Invalid student ID" });
+  }
+
+  const db = mongoose.connection.useDb('FOW');
+  const studentsCollection = db.collection('students');
+
+  const student = await studentsCollection.findOne({ _id: new ObjectId(studentId) });
+  return student;
+}
+
+// Route to fetch whether a student is in the counter group
+app.get('/api/counter-balanced/:studentId', async (req, res) => {
+  try {
+    const student = await getStudent(req, res);
+    if (!student) {
+      return res.status(404).json({ error: "Student not found" });
+    }
+    res.json(student.isCounterBalanced || "False");
+  } catch (error) {
+    console.error("Error fetching student counter balance status:", error);
+    res.status(500).json({ error: "Server error" });
+  }
 });
 
 // Route to fetch completed questions for a student
